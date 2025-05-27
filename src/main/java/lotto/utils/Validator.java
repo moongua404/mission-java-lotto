@@ -25,7 +25,7 @@ public class Validator {
     }
 
     public static void isInRange(List<Integer> values, int min, int max) {
-        if (values.stream().allMatch(v -> v >= min && v <= max)) {
+        if (!values.stream().allMatch(v -> v >= min && v <= max)) {
             throw new IllegalStateException("[ERROR] Invalid range.");
         }
     }

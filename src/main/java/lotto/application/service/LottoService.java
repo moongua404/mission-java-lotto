@@ -2,33 +2,57 @@ package lotto.application.service;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import lotto.application.domain.Lotto;
 import lotto.application.domain.enums.LottoPrize;
+import lotto.application.domain.enums.MessageConstants;
 import lotto.application.domain.exceptions.ProgramTerminationException;
+import lotto.application.port.inport.GetLottoPropertyUseCase;
+import lotto.application.port.inport.GetRandomUseCase;
+import lotto.application.port.outport.LottoPort;
 import lotto.utils.Validator;
 
 public class LottoService {
+    private final GetLottoPropertyUseCase getLottoPropertyUseCase;
+    private final GetRandomUseCase getRandomUseCase;
+    private final LottoPort lottoPort;
+
+    public LottoService(GetLottoPropertyUseCase getLottoPropertyUseCase,
+                 GetRandomUseCase getRandomUseCase, LottoPort lottoPort) {
+        this.getLottoPropertyUseCase = getLottoPropertyUseCase;
+        this.getRandomUseCase = getRandomUseCase;
+        this.lottoPort = lottoPort;
+    }
+
     public void run() {
-        final int price = repeat(this::getPrice);
+        final int amount = repeat(this::getAmount);
         final Lotto lotto = repeat(this::getLotto);
         final int bonus = repeat(() -> getBonusNumber(lotto));
 
-        List<Lotto> lottoNumbers = IntStream.range(0, price/1000).mapToObj(i -> {
+        List<Lotto> lottoNumbers = IntStream.range(0, amount).mapToObj(i -> {
             Lotto purchased = new Lotto(purchase());
             // lottoNumbers 출력
-            return purchased;
-        }).toList();
 
-        printResult(lotto, bonus, lottoNumbers);
+            return purchased;
+        }
+        ).toList();
+
+        printResult(lotto, bonus, lottoNumbers, amount);
     }
 
-    private int getPrice() {
+    private int getAmount() {
         try {
-            int res = 3000; // 입력 받아야 함
+            lottoPort.sendMessage(MessageConstants.PURCHASE_GUIDE);
+            int res = getLottoPropertyUseCase.getInteger();
             Validator.isDividedByThousand(res);
+            res /= 1000;
+            lottoPort.sendMessage(MessageConstants.PURCHASE_RESULT, res);
             return res;
         } catch (NoSuchElementException e) {
             throw new ProgramTerminationException();
@@ -39,7 +63,8 @@ public class LottoService {
 
     private Lotto getLotto() {
         try {
-            String res = "1,2,3,4,5,6";
+            lottoPort.sendMessage(MessageConstants.WINNING_NUMBER_GUIDE);
+            String res = getLottoPropertyUseCase.getString();
             return new Lotto(
                     Arrays.stream(res.split(","))
                             .map(String::trim)
@@ -55,7 +80,8 @@ public class LottoService {
 
     private int getBonusNumber(Lotto lotto) {
         try {
-            int res = 7;
+            lottoPort.sendMessage(MessageConstants.BONUS_NUMBER_GUIDE);
+            int res = getLottoPropertyUseCase.getInteger();
             if (lotto.isDuplicate(res)) {
                 throw new IllegalArgumentException();
             }
@@ -73,18 +99,33 @@ public class LottoService {
                 return supplier.get();
             } catch (ProgramTerminationException e) {
                 throw new IllegalStateException(e.getMessage());
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
+                lottoPort.sendMessage(exception.getMessage());
             }
         }
     }
 
     private List<Integer> purchase() {
-        return List.of(1, 2, 3, 4, 5, 6); // 랜덤으로 숫자를 뽑음
+        List<Integer> numbers = getRandomUseCase.getRandomNumbers(1, 45, 6);
+        lottoPort.printLottoNumbers(numbers);
+        return numbers;
     }
 
-    private void printResult(Lotto lotto, int bonusNumber, List<Lotto> purchased) {
-        List<LottoPrize> result = purchased.stream()
+    private void printResult(Lotto lotto, int bonusNumber, List<Lotto> purchased, int amount) {
+        Map<LottoPrize, Long> result = purchased.stream()
                 .map(other -> LottoPrize.getLottoPrize(other.countMatch(lotto), other.isMatch(bonusNumber)))
-                .toList();
+                .collect(Collectors.groupingBy(
+                        Function.identity(),
+                        Collectors.counting()
+                ));
+        long sum = Stream.of(LottoPrize.FIFTH_PRICE, LottoPrize.FOURTH_PRICE, LottoPrize.THIRD_PRICE,
+                LottoPrize.SECOND_PRICE, LottoPrize.FIRST_PRICE)
+                .peek(prize ->
+                    lottoPort.sendMessage(MessageConstants.RESULT_LINE,
+                            prize.getCondition(),
+                            prize.getPrice(),
+                            result.getOrDefault(prize, 0L)))
+                .reduce(0L, (acc, prize) -> acc + (prize.getPrice() * result.getOrDefault(prize, 0L)), Long::sum);
+        lottoPort.sendMessage(MessageConstants.RETURN_RATE, (float) (sum / (1000L * amount)));
     }
 }

@@ -31,19 +31,19 @@ public class LottoService {
     }
 
     public void run() {
-        final int amount = repeat(this::getAmount);
-        final Lotto lotto = repeat(this::getLotto);
-        final int bonus = repeat(() -> getBonusNumber(lotto));
-
-        List<Lotto> lottoNumbers = IntStream.range(0, amount).mapToObj(i -> {
-            Lotto purchased = new Lotto(purchase());
-            // lottoNumbers 출력
-
-            return purchased;
+        try {
+            final int amount = repeat(this::getAmount);
+            lottoPort.clear();
+            List<Lotto> lottoNumbers = IntStream.range(0, amount).mapToObj(i -> new Lotto(purchase())).toList();
+            lottoPort.clear();
+            final Lotto lotto = repeat(this::getLotto);
+            lottoPort.clear();
+            final int bonus = repeat(() -> getBonusNumber(lotto));
+            lottoPort.clear();
+            printResult(lotto, bonus, lottoNumbers, amount);
+        } catch (ProgramTerminationException e) {
+            lottoPort.sendMessage(e.getMessage());
         }
-        ).toList();
-
-        printResult(lotto, bonus, lottoNumbers, amount);
     }
 
     private int getAmount() {
@@ -98,7 +98,7 @@ public class LottoService {
             try {
                 return supplier.get();
             } catch (ProgramTerminationException e) {
-                throw new IllegalStateException(e.getMessage());
+                throw new ProgramTerminationException();
             } catch (RuntimeException exception) {
                 lottoPort.sendMessage(exception.getMessage());
             }
@@ -118,6 +118,7 @@ public class LottoService {
                         Function.identity(),
                         Collectors.counting()
                 ));
+        lottoPort.sendMessage(MessageConstants.WINNING_STATUS);
         long sum = Stream.of(LottoPrize.FIFTH_PRICE, LottoPrize.FOURTH_PRICE, LottoPrize.THIRD_PRICE,
                 LottoPrize.SECOND_PRICE, LottoPrize.FIRST_PRICE)
                 .peek(prize ->
@@ -126,6 +127,6 @@ public class LottoService {
                             prize.getPrice(),
                             result.getOrDefault(prize, 0L)))
                 .reduce(0L, (acc, prize) -> acc + (prize.getPrice() * result.getOrDefault(prize, 0L)), Long::sum);
-        lottoPort.sendMessage(MessageConstants.RETURN_RATE, (float) (sum / (1000L * amount)));
+        lottoPort.sendMessage(MessageConstants.RETURN_RATE, (float) ((double) sum / (1000L * amount) * 100));
     }
 }

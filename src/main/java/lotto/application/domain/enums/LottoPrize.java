@@ -32,7 +32,10 @@ public enum LottoPrize {
 
     public static LottoPrize getLottoPrize(int matchCount, boolean matchBonus) {
         if (matchCount == 6) {
-            return getFirstOrSecondPrize(matchBonus);
+            return FIRST_PRICE;
+        }
+        if (matchCount == 5 && matchBonus) {
+            return SECOND_PRICE;
         }
         if (matchCount == 5) {
             return THIRD_PRICE;
@@ -44,12 +47,5 @@ public enum LottoPrize {
             return FIFTH_PRICE;
         }
         return NOTHING;
-    }
-
-    private static LottoPrize getFirstOrSecondPrize(boolean matchBonus) {
-        if (matchBonus) {
-            return SECOND_PRICE;
-        }
-        return FIRST_PRICE;
     }
 }
